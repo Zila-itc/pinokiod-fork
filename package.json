@@ -1,0 +1,10 @@
+{
+  "name": "pinokiod-fork",
+  "version": "3.2.120",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "start": "node pinokiod/script/index",
+    "dev": "npm run start"
+  }
+}
