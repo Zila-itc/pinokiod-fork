@@ -1,0 +1,190 @@
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+<style>
+body {
+}
+.line2 {
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  background: rgba(0,0,100,0.04);
+}
+.line2 a {
+  text-decoration: none;
+  color: black;
+}
+.status {
+  padding: 10px;
+  margin: 10px;
+  border-radius: 10px;
+}
+.status.offline {
+  background: silver;
+}
+.status.online {
+  background: yellowgreen;
+}
+.switch {
+  padding: 10px;
+  margin: 10px 0;
+}
+.switch[data-online=true] {
+  color: yellowgreen;
+}
+.button {
+  padding: 10px;
+}
+.on, .off {
+  display: flex;
+  align-items: center;
+}
+.btn {
+  margin-right: 5px;
+  font-weight: normal;
+}
+.item {
+  display: flex;
+  align-items: flex-start;
+  background: rgba(255,255,255,1);
+  border-bottom: 1px solid rgba(0,0,0,0.07);
+  padding: 10px;
+}
+.item img {
+  width: 100px;
+}
+.item .title {
+  text-decoration: none;
+  font-weight: bold;
+  font-size: 16px;
+  color: royalblue;
+}
+.item .col {
+  padding: 0 10px;
+}
+.item .col > * {
+  margin: 5px 0;
+}
+.item .stat {
+  color: rgba(0,0,0,0.8);
+  display: flex;
+}
+.item .stat > * {
+  margin-right: 15px;
+}
+.timestamp {
+  color: rgba(0,0,0,0.5);
+}
+.selectors {
+  padding: 10px 0 0;
+  display: flex;
+}
+.selectors .selector.selected {
+/*
+  border: 3px solid black;
+  */
+  background: royalblue;
+}
+.selectors .selector {
+  color: white;
+  background: black;
+  /*
+  border: 3px solid transparent;
+  */
+  display: block;
+  padding: 10px 20px;
+  text-decoration: none;
+  font-weight: bold;
+  font-size: 14px;
+  text-transform: uppercase;
+}
+body {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+body main {
+  flex-grow: 1;
+}
+body main iframe {
+  border: none;
+  height: 100%;
+  width: 100%;
+}
+</style>
+<script src="/hotkeys.min.js"></script>
+<script src="/nav.js"></script>
+</head>
+<body class='<%=theme%>'>
+<header class='navheader grabbable'>
+<h1>
+<a class='home' href="/"><i class="fa-solid fa-house"></i></a>
+<button class='btn2' id='back'><i class="fa-solid fa-chevron-left"></i></button>
+<button class='btn2' id='forward'><i class="fa-solid fa-chevron-right"></i></button>
+<% paths.forEach((path) => { %>
+  <% if (path.action) { %>
+    <a class='path nav-button' id="<%=path.id%>" onclick="<%=path.action%>"><%-path.name%></a>
+  <% } else if (path.path) { %>
+    <a class='path' href="<%=path.path%>"><%-path.name%></a>
+  <% } %>
+<% }) %>
+<div class='flexible'></div>
+<div class='nav-btns'>
+  <a class='btn2' id='explore'><div><i class="fa-solid fa-globe"></i></div><div>Discover</div></a>
+  <a class='btn2' href="https://portal.pinokio.computer/" target="_blank"><div><i class="fa-solid fa-question"></i></div><div>Help</div></a>
+  <a class='btn2' href="/?mode=settings"><div><i class="fa-solid fa-gear"></i></div><div>Settings</div></a>
+  <button id='new-window' title='open a new window' class='btn2'><div><i class="fa-solid fa-plus"></i></div><div>Window</div></button>
+</div>
+<!--
+<div class='nav-btns'>
+  <a class='btn2' href='https://discord.gg/TQdNwadtE4' target="_blank"><div><i class="fa-brands fa-discord"></i></div><div>Discord</div></a>
+  <a class='btn2' href='https://twitter.com/cocktailpeanut' target="_blank"><div><i class="fa-brands fa-twitter"></i></div><div>Twitter</div></a>
+  <a class='btn2' href="/?mode=settings"><div><i class="fa-solid fa-gear"></i></div><div>Settings</div></a>
+</div>
+<button id='new-window' title='open a new window' class='btn2'><i class="fa-solid fa-plus"></i></button>
+-->
+</h1>
+</header>
+<main>
+<% if (theme === "dark") { %>
+  <iframe name="<%=schema%>" src="https://pinokio.computer/dark" <%=agent === "electron" ? "no-referrer" : ""%>></iframe>
+<% } else { %>
+  <iframe name="<%=schema%>" src="https://pinokio.computer/app" <%=agent === "electron" ? "no-referrer" : ""%>></iframe>
+<% } %>
+</main>
+<link href="/xterm.min.css" rel="stylesheet" />
+<link href="/css/fontawesome.min.css" rel="stylesheet">
+<link href="/css/solid.min.css" rel="stylesheet">
+<link href="/css/regular.min.css" rel="stylesheet">
+<link href="/css/brands.min.css" rel="stylesheet">
+<link href="/style.css" rel="stylesheet"/>
+<% if (agent === "electron") { %>
+  <link href="/electron.css" rel="stylesheet"/>
+<% } %>
+<script src="/common.js"></script>
+<script>
+/*
+document.querySelector("form").addEventListener("submit", (e) => {
+  e.preventDefault()
+  e.stopPropagation()
+  let url = e.target.querySelector("input[type=search]").value
+  if (url && url.length > 0) {
+    location.href = `/pinokio/download?uri=${url}`
+  }
+})
+*/
+document.querySelector("#explore").addEventListener("click", async (e) => {
+  e.preventDefault()
+  e.stopPropagation()
+  location.href = "/?mode=explore"
+})
+document.querySelector("#back").addEventListener("click", (e) => {
+  history.back()
+})
+document.querySelector("#forward").addEventListener("click", (e) => {
+  history.forward()
+})
+</script>
+</body>
+</html>

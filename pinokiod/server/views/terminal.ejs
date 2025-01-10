@@ -1,0 +1,888 @@
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+<script src="/hotkeys.min.js"></script>
+<script src="/ace/ace.js"></script>
+<script src="/noty.js"></script>
+<script src="/notyq.js"></script>
+<script src="/xterm.js"></script>
+<script src="/xterm-addon-fit.js"></script>
+<script src="/xterm-addon-web-links.js"></script>
+<script src="/xterm-theme.js"></script>
+<script src="/xterm-addon-search.js"></script>
+<script src="/xterm-addon-search-bar.js"></script>
+<script src="/sweetalert2.js"></script>
+<script src="/Socket.js"></script>
+<script src="/common.js"></script>
+<script src="/he.js"></script>
+<script src="/opener.js"></script>
+<!--
+<script src="/nav.js"></script>
+-->
+<script src="/autoexpand.js"></script>
+<script src="/modalinput.js"></script>
+<script src="/simplemodal.js"></script>
+<script src="/waitmodal.js"></script>
+<script src="/notifyinput.js"></script>
+<script src="/report.js"></script>
+<script src="/mark.min.js"></script>
+<link href="/xterm.min.css" rel="stylesheet" />
+<link href="/css/fontawesome.min.css" rel="stylesheet">
+<link href="/css/solid.min.css" rel="stylesheet">
+<link href="/css/regular.min.css" rel="stylesheet">
+<link href="/css/brands.min.css" rel="stylesheet">
+<link href="/style.css" rel="stylesheet"/>
+<link href="/noty.css" rel="stylesheet"/>
+<% if (agent === "electron") { %>
+  <link href="/electron.css" rel="stylesheet"/>
+<% } %>
+<style>
+html {
+  scroll-behavior: smooth;
+  height: 100%;
+  overflow: hidden;
+}
+body {
+  height: 100%;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+#table > table {
+  border-left: 2px solid black;
+  padding-left: 5px;
+  margin: 10px 0;
+}
+.highlight {
+  background: yellow;
+  width: 100px;
+}
+th {
+  background: rgba(0,0,0,0.1);
+  padding: 10px;
+  font-size: 12px;
+}
+td {
+  font-size: 12px;
+  padding: 10px;
+}
+td.val {
+  background: rgba(0,0,0,0.06);
+}
+td.key {
+  background: rgba(0,0,0,0.1);
+}
+.button {
+  cursor: pointer; 
+  background: rgba(0,0,0,0.8);
+  color: white;
+  padding: 5px 10px;
+  border-radius: 4px;
+}
+header {
+  position: relative;
+  padding: 10px 0;
+}
+.button:hover {
+  
+}
+.terminal {
+  box-sizing: border-box;
+}
+.xterm .xterm-viewport {
+  width: initial !important;
+}
+.navheader {
+  background: var(--dark-bg);
+}
+.btn {
+  background: royalblue;
+}
+#del-bin {
+  color: royalblue;
+  cursor: pointer;
+  font-weight: bold;
+  padding: 0 5px;
+  text-decoration: underline;
+}
+body.frozen {
+  overflow: auto !important;
+}
+</style>
+<link href="/terminal.css" rel="stylesheet"/>
+<script>
+document.addEventListener("DOMContentLoaded", async () => {
+  <% if (error) { %>
+    document.querySelector(".requirements .content").innerHTML = '<div class="loading"><i class="fa-solid fa-circle-exclamation"></i> <%=error%></div>'
+  <% } %>
+  <% if (requirements_pending) { %>
+    await new Promise((resolve, reject) => {
+      let interval = setInterval(() => {
+        fetch("/pinokio/requirements_ready").then((res) => {
+          return res.json()
+        }).then((res) => {
+          if (res.error) {
+            alert(res.error)
+            clearInterval(interval)
+          } else if (!res.requirements_pending) {
+            clearInterval(interval)
+            resolve()
+          }
+        })
+      }, 500)
+    })
+    location.href = location.href
+  <% } %>
+  const n = new N()
+  class RPC {
+    constructor() {
+      this.socket = new Socket()
+    }
+    write(text) {
+      this.term.write(text)
+      this.dirty = true
+    }
+    finished() {
+    /*
+      n.Noty({
+        text: `[Success] All steps complete`,
+      })
+      */
+      document.querySelector(".run .play").classList.remove("hidden")
+      document.querySelector(".run .stop").classList.add("hidden")
+      document.querySelector(".run .starting").classList.add("hidden")
+    }
+    stop() {
+      this.socket.run({
+        method: "kernel.api.stop",
+        params: {
+          //uri: "<%-uri%>",
+          //uri: location.pathname.slice(1).replace("api/", ""),
+          uri: "~" + location.pathname
+        }
+      }, (stream) => {
+      })
+    }
+    save() {
+      return new Promise((resolve, reject) => {
+        let cwd = "~" + location.pathname
+
+        this.socket.close()
+        this.socket.run({
+          method: "fs.write",
+          params: {
+            path: cwd,
+            text: str,
+//            string: str
+//            json: instructions
+          }
+        }, (packet) => {
+          if (packet.type === "result" && packet.id === "fs.write") {
+            dirty = false
+            document.querySelector("#save").classList.add("disabled")
+            resolve()
+          }
+        })
+      })
+    }
+    start(mode) {
+      return new Promise(async (resolve, reject) => {
+//        await this.save()
+        await this.socket.close()
+
+        let query = Object.fromEntries(new URLSearchParams(location.search))
+
+        this.socket.run({
+          //uri: location.pathname.slice(1).replace("api/", ""),
+          uri: "~" + location.pathname,
+          //uri: "<%-uri%>",
+          mode,
+          input: query,
+          client: {
+            cols: this.term.cols,
+            rows: this.term.rows,
+          }
+        }, async (packet) => {
+          if (packet.type === 'start') {
+            refreshParent(packet)
+            reloadMemory()
+            if (packet.data && packet.data.description) {
+              if ('current' in packet.data) {
+                document.querySelector("footer").innerHTML = `<b>
+                  <i class="fa-solid fa-circle-notch fa-spin"></i>(${packet.data.current+1}/${packet.data.total}) ${packet.data.title ? packet.data.title : ''}
+                </b>
+                <div class='flexible content'>${packet.data.description}</div>`
+//                <div class='toggle-expand'>
+//                  <i class="fa-solid fa-circle-chevron-up"></i>
+//                </div>`
+              } else {
+                document.querySelector("footer").innerHTML = `<b>
+                  <i class="fa-solid fa-circle-notch fa-spin"></i> ${packet.data.title ? packet.data.title : ''}
+                </b>
+                <div class='flexible content'></div>`
+//                <div class='toggle-expand'>
+//                  <i class="fa-solid fa-circle-chevron-up"></i>
+//                </div>`
+              }
+            } else if (packet.data && packet.data.method) {
+              document.querySelector("footer").innerHTML = `<b>
+                <i class="fa-solid fa-circle-notch fa-spin"></i> (${packet.data.current+1}/${packet.data.total}) ${packet.data.method}
+              </b>
+              <div class='flexible content'>${packet.data.params ? JSON.stringify(packet.data.params) : ''}</div>`
+//              <div class='toggle-expand'>
+//                <i class="fa-solid fa-circle-chevron-up"></i>
+//              </div>`
+            }
+          } else if (packet.type === "stream") {
+            if (packet.data.raw) {
+              this.write(packet.data.raw)
+            } else if (packet.data.json) {
+              this.write(JSON.stringify(packet.data.json).replace(/\n/g, "\r\n"))
+              this.write("\r\n")
+            } else if (packet.data.json2) {
+              this.write(JSON.stringify(packet.data.json2, null, 2).replace(/\n/g, "\r\n"))
+              this.write("\r\n")
+            }
+            document.querySelector(".run .play").classList.add("hidden")
+            document.querySelector(".run .starting").classList.add("hidden")
+            document.querySelector(".run .stop").classList.remove("hidden")
+          } else if (packet.type === 'disconnect') {
+            refreshParent(packet)
+            reloadMemory()
+            this.term.write("\r\nDisconnected...\r\n")
+            document.querySelector("footer").innerHTML = "<b>Ready</b>"
+            this.socket.close()
+            document.querySelector(".run .play").classList.remove("hidden")
+            document.querySelector(".run .stop").classList.add("hidden")
+          } else if (packet.type === 'connect') {
+            const message = "..........Connected!\r\n"
+            this.write(message)
+            /*
+            for(let i=0; i<message.length; i++) {
+              await new Promise((r, reject) => {
+                setTimeout(()=> {
+                  this.term.write(message[i])
+                  r()
+                }, 20)
+              })
+            }
+            */
+            document.querySelector(".run .play").classList.add("hidden")
+            document.querySelector(".run .starting").classList.add("hidden")
+            document.querySelector(".run .stop").classList.remove("hidden")
+//          } else if (packet.type === "key.set") {
+//            let keys = await fetch("/pinokio/keys").then((res) => {
+//              return res.json()
+//            })
+//            let input = await ModalInput({
+//              title: "Key",
+//              description: "select a key",
+//              form: [{
+//                key: "key",
+//                type: "select",
+//                items: keys,
+//              }, {
+//                key: "password",
+//                type: "password",
+//              }]
+//            })
+//            if (input) {
+//              this.socket.respond({
+//                response: input,
+//                uri: "~" + location.pathname,
+//              })
+//            }
+          } else if (packet.type === 'wait.end') {
+            try {
+              Swal.close()
+            } catch (e) {
+            }
+            this.socket.respond({
+              response: {},
+//              uri: "~" + location.pathname,
+              uri: packet.id
+            })
+          } else if (packet.type === 'wait') {
+            await WaitModal(packet.data)
+          } else if (packet.type === "modal") {
+            await SimpleModal(packet.data)
+            this.socket.respond({
+              response: {},
+              //uri: "~" + location.pathname,
+              uri: packet.id
+            })
+          } else if (packet.type === "input") {
+            let params = packet.data
+            let type = (params.type ? params.type : "modal")
+            let input
+            if (type === "modal") {
+              input = await ModalInput(packet.data)
+            } else if (type === "notify") {
+              input = await NotifyInput(packet.data, n)
+            }
+            if (input) {
+              this.socket.respond({
+                response: input,
+                uri: packet.id
+//                uri: "~" + location.pathname,
+//                uri: (packet.caller ? packet.caller : packet.id)
+              })
+            }
+            /*
+              params := {
+                title,
+                description,
+                form: [{
+                  title,
+                  description
+                }]
+              }
+            */
+          } else if (packet.type === "tab.open") {
+            refreshParent(packet)
+          } else if (packet.type === "browser.open") {
+          /*
+            {
+              "method": "browser.open",
+              "params": {
+                "uri",
+                "target": "_self (default)"|"_blank"|"_parent"|"_top",
+                "features"
+              }
+            }
+            */
+
+///// DEPRECATE browser.open : Pinokio IS the browser. Everything opens in Pinokio. May bring back when necessary
+//            refreshParent()
+//            let params = packet.data
+//            window.open(
+//              params.uri,
+//              (params.target || "_self"),
+//              params.features
+//            )
+          } else if (packet.type === "browser.close") {
+            let params = packet.data
+            if (params && params.target) {
+              let targetWindow = window.open('', params.target)
+              if (targetWindow) {
+                targetWindow.close();
+              }
+            } else {
+              window.close()
+            }
+          } else if (packet.type === "browser") {
+          /*
+            {
+              "method": "browser.close"
+            }
+          */
+            let { method, params } = packet.data
+            let resolved = window
+            let tokens = method.split(".")
+            for(let token of tokens) {
+              resolved = resolved[token]
+            }
+            let result = resolved(...params)
+          } else if (packet.type === "notify") {
+          /*
+            {
+              html: <notification html>,
+              href: <link location to open>,
+              target: <target for window.open()>,
+              features: <windowFeatures>, ("self" => opens in pinokio)
+            }
+          */
+            if (packet.data) {
+              let payload = {}
+              if (packet.data.html) {
+                payload.text = packet.data.html
+              }
+              if (packet.data.type) {
+                payload.type = packet.data.type
+              }
+              payload.silent = packet.data.silent
+              payload.callbacks = {
+                onClick: () => {
+                  let params = packet.data
+                  if (params.href || params.uri) {
+                    window.open(
+                      params.uri || params.href,
+                      (params.target || "_self"),
+                      params.features
+                    )
+                  } else if (params.action === "close") {
+                    if (params && params.target) {
+                      let targetWindow = window.open('', params.target)
+                      if (targetWindow) {
+                        targetWindow.close();
+                      }
+                    } else {
+                      window.close()
+                    }
+                  }
+                }
+              }
+              n.Noty(payload)
+            }
+          } else if (packet.type === "result") {
+            refreshParent(packet)
+            reloadMemory()
+          } else if (packet.type === "info") {
+            n.Noty({
+              text: `${packet.data}`,
+            })
+          } else if (packet.type === "error") {
+//            n.Noty({
+//              text: `${packet.data}`,
+//              type: "error"
+//            })
+
+//            this.socket.close()
+//            refreshParent(packet)
+//            reloadMemory()
+
+
+
+            //document.querySelector("footer .content").innerHTML = document.querySelector("footer .content").innerHTML +  `<pre class='error'>${packet.data}</pre>`
+            document.querySelector("footer .content").innerHTML = document.querySelector("footer .content").innerHTML +  `<pre class='error'>ERROR</pre>`
+//            document.querySelector("footer .toggle-expand i").className = "fa-solid fa-circle-chevron-down"
+//            document.querySelector("footer").classList.add("expanded")
+            document.querySelector("footer i").className = "fa-solid fa-triangle-exclamation"
+
+            document.querySelector(".run .play").classList.remove("hidden")
+            document.querySelector(".run .starting").classList.add("hidden")
+            document.querySelector(".run .stop").classList.add("hidden")
+
+
+            document.querySelector("#error-screen").classList.remove("hidden")
+            document.querySelector("#error-screen pre").textContent = packet.data
+            let instance = new Mark(document.querySelector("#error-screen pre"), {
+              separateWordSearch: false,
+              accuracy: "exactly"
+            })
+            /*
+            document.querySelector("#error-screen").addEventListener("click", (e) => {
+              document.querySelector("#error-screen").classList.add("hidden")
+            })
+            */
+            console.log("instance", instance)
+            instance.mark(packet.event)
+            let element = document.querySelector("mark")
+            element.scrollIntoView({ behavior: "smooth", block: "center" });
+
+
+
+
+          } else if (packet.type === "event") {
+            if (packet.data === "stop") {
+              document.querySelector("footer").innerHTML = "<b>Ready</b>"
+              setTimeout(() => {
+
+                let params = new URLSearchParams(location.search)
+                let entries = [...params.entries()]
+                let options;
+                if (entries.length > 0) {
+                  options = {}
+                  for(const [key, value] of entries) {
+                    options[key] = value;
+                  }
+                }
+                if (options && options.html) {
+                  n.Noty({
+                    text: options.html,
+                    timeout: 3000,
+                    callbacks: {
+                      onClose: () => {
+                        let uri = options.uri || options.href
+                        if (uri) {
+                          let target = options.target || "_self"
+                          let features = options.features
+                          window.open(uri, target, features)
+                        } else if (options.action === "close") {
+                          window.close()
+                        }
+                      }
+                    }
+                  })
+                }
+              <% if (locals.prev) { %>
+                n.Noty({
+                  text: '[Notice] finished',
+                  type: 'success'
+                })
+              <% } %>
+              /*
+                n.Noty({
+                  text: '[Notice] finished',
+                  type: 'success'
+                })
+                */
+                document.querySelector(".run .play").classList.remove("hidden")
+                document.querySelector(".run .starting").classList.add("hidden")
+                document.querySelector(".run .stop").classList.add("hidden")
+              }, 0)
+              //this.socket.close()
+            }
+          }
+
+          // Get the available space for the terminal
+//          let terminalContainer = document.querySelector("#terminal")
+//          const availableHeight = terminalContainer.clientHeight;
+//
+//          // Calculate the number of columns and rows the terminal should have
+//          console.log(this.term)
+//          //const rows = Math.floor(availableHeight / this.term._core.viewport._charSizeService.height);
+//          const rows = Math.floor(this.term._core.viewport._lastRecordedViewportHeight / this.term._core.viewport._charSizeService.height);
+//
+//
+//          // Resize the terminal
+//          this.term.resize(this.term.cols, rows);
+//          this.term.scrollToLine(this.term.rows-1);
+//          this.fit.fit()
+//          let pageBottom = document.querySelector("#end")
+//          pageBottom.scrollIntoView()
+        })
+      })
+    }
+    async run (mode) {
+      this.mode = (mode ? mode : "run")
+      
+//      if (dirty) {
+//        await this.save()
+//        n.Noty({
+//          text: `script updated`,
+//        })
+//      }
+
+      await this.createTerm()
+      await this.start(mode)
+    }
+    async createTerm () {
+      if (!this.term) {
+        let config = {
+          scrollback: 9999999,
+          fontSize: 12,
+          theme: xtermTheme.FrontEndDelight
+        }
+        let res = await fetch("/xterm_config").then((res) => {
+          return res.json()
+        })
+        if (res && res.config) {
+          config = res.config
+        }
+        const term = new Terminal(config)
+        term.open(document.querySelector("#terminal"))
+
+        term.attachCustomKeyEventHandler(event => {
+          if (event.ctrlKey && event.key === 'c' && term.hasSelection()) {
+            return false;
+          }
+          if (event.ctrlKey && event.key === 'v' && this._options.pasteWithCtrlV) {
+            return false;
+          }
+          return true;
+        });
+        //const rows = Math.floor(document.querySelector("#terminal").clientHeight / term._core.viewport._charSizeService.height);
+        //const cols = Math.floor(document.querySelector("#terminal").clientHeight / term._core.viewport._charSizeService.width);
+        //console.log(cols, term.cols)
+        //  // Resize the terminal
+        ////term.resize(cols, rows-5);
+        //term.resize(cols, rows);
+
+        const fitAddon = new FitAddon.FitAddon();
+//        const searchAddon = new SearchAddon.SearchAddon();
+//        const searchAddonBar = new SearchBarAddon.SearchBarAddon({searchAddon});
+        term.loadAddon(fitAddon);
+        <% if (agent === "electron") { %>
+          term.loadAddon(new WebLinksAddon.WebLinksAddon((event, uri) => {
+            window.open(uri, "_blank")
+          }))
+        <% } else { %>
+          term.loadAddon(new WebLinksAddon.WebLinksAddon());
+        <% } %>
+//        term.loadAddon(searchAddon)
+//        term.loadAddon(searchAddonBar);
+//        searchAddonBar.show();
+        fitAddon.fit();
+        this.term = term
+        this.fit = fitAddon
+      }
+      this.term.focus()
+    }
+  }
+  <% if (!install_required) { %>
+    const rpc = new RPC()
+
+    <% if (mod && runnable) { %>
+      window.addEventListener('message', function(event) {
+        console.log("Message received from the parent: ", event.data); // Message received from parent
+        //  "foreground" message adds a newline to the terminal
+        // Needed to fix the issue where the terminal won't write anything when in background
+        // so when coming back from background, need to refresh by just adding a newline.
+        if (event.data && event.data.action === "foreground") {
+          
+
+          // if dirty, update
+          // if not dirty, don't update
+          const delimiter = "\r\n"
+          if (rpc.dirty) {
+            rpc.term.write(delimiter)
+            rpc.dirty = false
+          } else {
+          }
+
+          //console.log("buffer", rpc.term.buffer)
+          //if (rpc.term.buffer) {
+          //  const lastRow = rpc.term.buffer.active.baseY;
+          //  const lastLine = rpc.term.buffer.active.getLine(lastRow);
+          //  const lastLine2 = rpc.term.buffer.active.getLine(lastRow-1);
+          //  const cell = lastLine.getCell().getChars()
+          //  const cell2 = lastLine.getCell().getChars()
+          //  console.log({ lastLine, lastLine2, cell, cell2 })
+          //  const lastStr = cell[cell.length - 3];
+          //  console.log({ lastRow, lastLine, lastStr })
+
+          //  const delimiter = "\r\n█"
+          //  if (lastStr === delimiter) {
+          //    console.log("don't update") 
+          //  } else {
+          //    console.log("update")
+          //    rpc.term.write(delimiter)
+          //  }
+          //}
+        }
+      });
+
+      if (document.querySelector(".stop")) {
+        document.querySelector(".stop").addEventListener("click", async (e) => {
+          await rpc.stop()
+      //    socket.run({
+      //      id: location.pathname,
+      //      method: "kernel.api.stop"
+      //    }, (stream) => {
+      //      console.log("#", stream)
+      //    })
+          document.querySelector(".run .play").classList.remove("hidden")
+          document.querySelector(".run .starting").classList.add("hidden")
+          document.querySelector(".run .stop").classList.add("hidden")
+        })
+      }
+      if (document.querySelector(".play")) {
+        document.querySelector(".play").addEventListener("click", async (e) => {
+          document.querySelector(".run .play").classList.add("hidden")
+          document.querySelector(".run .starting").classList.remove("hidden")
+          await rpc.run()
+        })
+      }
+    <% } %>
+
+    <% if (stop) { %>
+      await rpc.stop()
+      document.querySelector(".run .play").classList.remove("hidden")
+      document.querySelector(".run .starting").classList.add("hidden")
+      document.querySelector(".run .stop").classList.add("hidden")
+    <% } else { %>
+      <% if (run) { %>
+        // run (query params run=true)
+        document.querySelector(".run .play").classList.add("hidden")
+        document.querySelector(".run .starting").classList.remove("hidden")
+        rpc.run()
+      <% } else { %>
+        rpc.run("listen")
+      <% } %>
+    <% } %>
+  <% } %>
+
+  if (document.querySelector("#lv")) {
+    document.querySelector("#lv").addEventListener("click", (e) => {
+      let m = e.target.closest(".memory")
+      m.classList.toggle("collapsed")
+      if (m.classList.contains("collapsed")) {
+        m.querySelector("i").className = "fa-solid fa-sort-down"
+      } else {
+        m.querySelector("i").className = "fa-solid fa-sort-up"
+      }
+    })
+  }
+  document.querySelector("#close-error-screen").addEventListener('click', (e) => {
+    document.querySelector("#error-screen").classList.add("hidden")
+  })
+  if (document.querySelector("#del-bin")) {
+    document.querySelector("#del-bin").addEventListener("click", async (e) => {
+      console.log("del-bin")
+      let proceed = confirm("Are you sure you wish to delete the bin folder?")
+      if (proceed) {
+        document.querySelector(".reset-bin-loading").classList.remove("hidden")
+        document.querySelector("#del-bin").classList.add("hidden")
+        let res = await fetch("/pinokio/delete", {
+          method: "post",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({ type: "bin" })
+        }).then((res) => {
+          return res.json()
+        })
+        console.log(res)
+        document.querySelector(".reset-bin-loading").classList.add("hidden")
+        if (res.error) {
+          alert(res.error)
+        } else {
+          //location.href = location.href
+          document.querySelector("#install-form").submit()
+        }
+      }
+    })
+  }
+//  document.querySelector("#open-log").addEventListener("click", async (e) => {
+//    let logs = await fetch("/getlog?logpath=<%=logpath%>").then((res) => {
+//      return res.text()
+//    })
+//    console.log(logs)
+//  })
+})
+const reloadMemory = async () => {
+//  let url = "/pinokio/memory?filepath=<%=encodedFilePath%>"
+//  console.log("Url", url)
+//  let memory = await fetch(url).then((res) => {
+//    return res.json()
+//  })
+//  console.log("memory", memory)
+//  document.querySelector(".memory table").innerHTML = memory.map((m) => {
+//    let html = `<tr><td>local.${m.key}</td><td>${m.val}</td>`
+//    if (m.localhost) {
+//      if (m.tunnel) {
+//        html += `<td>${m.tunnel}</td>
+//  <td><a class='btn2' target="_blank" href="${m.tunnel}"><i class="fa-solid fa-arrow-up-right-from-square"></i> Open</a></td>
+//  <td><button data-url="${m.val}" class='btn2 tunnel-stop'><i class="fa-solid fa-lock-closed"></i> Make Private</button></td>`
+//      } else {
+//        html += `<td><button data-url="${m.val}" class='btn2 tunnel'><i class="fa-solid fa-lock-open"></i> Make Public</button></td>`
+//      }
+//    }
+//    html += "</tr>"
+//    return html
+//  }).join("")
+}
+
+</script>
+</head>
+<% if (install_required) { %>
+<body class='frozen <%=theme%>'>
+<% } else { %>
+<body class='<%=theme%>'>
+<% } %>
+  <header class='navheader'>
+  <% if (!install_required) { %>
+    <div class='runner'>
+      <% if (locals.prev) { %>
+        <a class='btn' href="<%=prev%>"><i class="fa-solid fa-arrow-left"></i> Back</a>
+      <% } %>
+      <div class='btn run <%= mod && runnable ? "" : "hidden" %>'>
+        <span class='play'><i class="fa-solid fa-play"></i> Start</span>
+        <span class='starting hidden'><i class="fa-solid fa-circle-notch fa-spin"></i> Starting...</span>
+        <span class='stop hidden'><i class="fa-solid fa-stop"></i> Stop</span>
+      </div>
+      <button class='btn' id='open-fs' data-filepath="<%=filepath%>"><i class="fa-solid fa-eye"></i> View File</button>
+      <!--
+      <button class='btn' id='open-log' data-logpath="<%=logpath%>"><i class="fa-solid fa-align-left"></i> View Logs</button>
+      -->
+    </div>
+  <% } %>
+  </header>
+  <% if (requirements_pending) { %>
+    <div class='requirements'>
+      <div class='content'>
+        <div class='loading'>
+          <i class="fa-solid fa-circle-notch fa-spin"></i>
+        </div>
+      </div>
+    </div>
+  <% } else { %>
+    <% if (install_required) { %>
+      <div class='requirements'>
+        <div class='content'>
+          <div class='title'><i class="fa-solid fa-circle-exclamation"></i> Installation required</div>
+          <div class='btn-group'>
+            <% requirements.map((r) => { %>
+              <div class='requirement-item'>
+                <% if (r.installed) { %>
+                  <div class='name'><%=r.type ? `${r.type} : ${r.name}` : r.name%></div>
+                  <div class='flexible'></div>
+                  <div class='label'>Installed</div>
+                <% } else { %>
+                  <div class='name highlighted'><%=r.type ? `${r.type} : ${r.name}` : r.name%></div>
+                  <div class='flexible'></div>
+                  <div class='label highlighted'>Not Installed</div>
+                <% } %>
+              </div>
+            <% }) %>
+          </div>
+          <form id='install-form' method="post" action="/pinokio/install">
+            <input type='hidden' name="requirements" value="<%=JSON.stringify(requirements)%>">
+            <input type='hidden' name='callback' value="<%=current%>">
+            <button class='btn'>Install</button>
+          </form>
+          <div class='item'>
+            <div class='d'>Not working? <a id='del-bin'>Try a fresh install</a></div>
+            <div class='reset-bin-loading hidden'>
+              <i class="fa-solid fa-circle-notch fa-spin"></i> Stand by. Do not close this window..
+            </div>
+          </div>
+        </div>
+      </div>
+    <% } else { %>
+      <div class='terminal-container'>
+        <% if (memory.length > 0) { %>
+          <div class='memory'>
+            <div class='memory-header'>
+              <div>Memory</div>
+              <div class='flexible'></div>
+              <div id='lv' class='btn2'><i class="fa-solid fa-sort-up"></i></div>
+            </div>
+            <table>
+            <% memory.forEach((m) => { %>
+              <tr>
+                <td>local.<%=m.key%></td>
+                <td><%=m.val%></td>
+                <% if (m.localhost) { %>
+                  <% if (m.tunnel) { %>
+                    <td><%=m.tunnel%></td>
+                    <td><a class='btn2' target="_blank" href="<%=m.tunnel%>"><i class="fa-solid fa-arrow-up-right-from-square"></i> Open</a></td>
+                    <td><button data-url="<%=m.val%>" class='btn2 tunnel-stop'><i class="fa-solid fa-lock-closed"></i> Make Private</button></td>
+                  <% } else { %>
+                    <td><button data-url="<%=m.val%>" class='btn2 tunnel'><i class="fa-solid fa-lock-open"></i> Make Public</button></td>
+                  <% } %>
+                <% } %>
+              </tr>
+            <% }) %>
+            </table>
+          </div>
+        <% } else { %>
+          <div class='memory'>
+            <div class='memory-header'>
+              <div>Memory</div>
+              <div class='flexible'></div>
+              <div id='lv' class='btn2'><i class="fa-solid fa-sort-up"></i></div>
+            </div>
+            <table></table>
+          </div>
+        <% } %>
+        <div id='terminal'></div>
+      </div>
+      <footer><b>Ready</b></footer>
+    <% } %>
+  <% } %>
+  <div id='error-screen' class='hidden'>
+    <pre></pre>
+    <div id='error-screen-footer'>
+      <a class='btn' id='close-error-screen'>
+        <div><i class="fa-solid fa-xmark"></i></div>
+      </a>
+      <div class='flexible'></div>
+      <a class='btn' href="https://portal.pinokio.computer" target="_blank">
+        <div><i class="fa-solid fa-question"></i> Ask Community</div>
+      </a>
+    </div>
+  </div>
+</body>
+</html>

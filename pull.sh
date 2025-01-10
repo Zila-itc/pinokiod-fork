@@ -5,7 +5,7 @@ PACKAGE_NAME="pinokiod"
 PACKAGE_VERSION="latest"
 
   if [ -d "pinokiod" ]; then
-    rm -rf pinokiod
+    find pinokiod -mindepth 1 -maxdepth 1 ! -name 'node_modules' -exec rm -rf {} +
   fi
 
   # Get the new version of the package
@@ -17,6 +17,7 @@ PACKAGE_VERSION="latest"
     # Extract the package to pinokiod directory
     mkdir -p pinokiod
     tar -xzf $PACKAGE_TARBALL -C pinokiod --strip-components=1
+    rm $PACKAGE_TARBALL
   fi
 fi
 

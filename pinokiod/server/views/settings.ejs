@@ -1,0 +1,545 @@
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+<link href="/xterm.min.css" rel="stylesheet" />
+<link href="/css/fontawesome.min.css" rel="stylesheet">
+<link href="/css/solid.min.css" rel="stylesheet">
+<link href="/css/regular.min.css" rel="stylesheet">
+<link href="/css/brands.min.css" rel="stylesheet">
+<link href="/markdown.css" rel="stylesheet"/>
+<link href="/noty.css" rel="stylesheet"/>
+<link href="/style.css" rel="stylesheet"/>
+<% if (agent === "electron") { %>
+  <link href="/electron.css" rel="stylesheet"/>
+<% } %>
+<style>
+.line2 {
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  background: rgba(0,0,100,0.04);
+}
+.line2 a {
+  text-decoration: none;
+  color: black;
+}
+.status {
+  padding: 10px;
+  margin: 10px;
+  border-radius: 10px;
+}
+.status.offline {
+  background: silver;
+}
+.status.online {
+  background: yellowgreen;
+}
+.switch {
+  padding: 10px;
+  margin: 10px 0;
+}
+.switch[data-online=true] {
+  color: yellowgreen;
+}
+.button {
+  padding: 10px;
+}
+.on, .off {
+  display: flex;
+  align-items: center;
+}
+.btn {
+  margin-right: 5px;
+  font-weight: normal;
+}
+.items {
+  max-width: 600px;
+  margin: 50px auto;
+}
+.item {
+  margin: 0;
+  /*
+  border-top: 1px solid rgba(255,255,255,0.1);
+  border-bottom: 1px solid rgba(255,255,255,0.1);
+  */
+  padding: 20px 0;
+}
+.titleview h1 {
+  word-break: break-word;
+  font-size: 50px;
+  letter-spacing: -1px;
+}
+.item > .d {
+  padding-bottom: 10px;
+}
+.item button {
+  padding: 10px 20px;
+}
+.item label {
+  display: block;
+  text-transform: capitalize;
+  font-size: 20px;
+  font-weight: bold;
+  padding-bottom: 5px;
+}
+.item .explanation {
+  padding-top: 5px;
+  color: brown;
+  font-size: 12px;
+  font-weight: bold;
+  font-family: verdana;
+}
+body.dark .item input[type=text] {
+  background: rgba(255,255,255,0.1);
+  color: white;
+}
+body.dark .item select {
+  color: white;
+  background: rgba(255,255,255,0.1);
+}
+.item input[type=text] {
+  padding: 10px;
+  flex-grow: 1;
+  border: none;
+  background: rgba(0,0,0,0.05);
+  width: 100%;
+}
+.item select {
+  -webkit-appearance: none;
+  -moz-appearance:    none;
+  appearance:         none;
+
+  background: rgba(0,0,0,0.05);
+  padding: 10px;
+  box-sizing: border-box;
+  width: 100%;
+  border: none;
+}
+.item img {
+  width: 100px;
+}
+.item .title {
+  text-decoration: none;
+  color: royalblue;
+}
+.item .col {
+  padding: 10px;
+}
+.item .col > * {
+  margin: 5px 0;
+}
+.item .stat {
+  color: rgba(0,0,0,0.8);
+  display: flex;
+}
+.item .stat > * {
+  margin-right: 15px;
+}
+.timestamp {
+  color: rgba(0,0,0,0.5);
+}
+.loading {
+  padding: 10px 20px;
+  text-align: center;
+}
+body.dark .btn {
+  color: white;
+  border: 1px solid rgba(255,255,255,0.3) !important;
+}
+body.light {
+/*
+  background: var(--light-nav-bg);
+  */
+}
+/*
+form {
+  text-align: center;
+}
+body.dark header .btn2 {
+  color: var(--light-link-color); 
+}
+header .btn2 {
+  color: var(--light-color); 
+}
+*/
+/*
+body.dark header .home {
+  color: var(--light-link-color); 
+}
+*/
+header .home {
+  color: var(--light-color); 
+  padding: 10px;
+}
+body.dark hr {
+  background: white;
+}
+hr {
+  opacity: 0.03;
+  background: black;
+  margin: 50px 0;
+  height: 1px;
+  border: none;
+}
+.reset-cache-loading {
+  padding: 10px;
+  background: rgba(0,0,0,0.1);
+  margin-bottom: 10px;
+  text-align: center;
+}
+.reset-bin-loading {
+  padding: 10px;
+  background: rgba(0,0,0,0.1);
+  margin-bottom: 10px;
+  text-align: center;
+}
+</style>
+<script src="/hotkeys.min.js"></script>
+<script src="/sweetalert2.js"></script>
+<script src="/noty.js"></script>
+<script src="/notyq.js"></script>
+<script src="/xterm.js"></script>
+<script src="/xterm-addon-fit.js"></script>
+<script src="/xterm-addon-web-links.js"></script>
+<script src="/xterm-theme.js"></script>
+<script src="/sweetalert2.js"></script>
+<script src="/install.js"></script>
+<script src="/timeago.min.js"></script>
+<script src="/common.js"></script>
+<script src="/opener.js"></script>
+<script src="/nav.js"></script>
+<script src="/report.js"></script>
+</head>
+<body class='<%=theme%>'>
+<!--
+<nav>
+  <a class='logo' href="/">dal</a>
+</nav>
+  -->
+<header class='navheader grabbable'>
+<h1>
+<a class='home' href="/"><i class="fa-solid fa-house"></i></a>
+<button class='btn2' id='back'><i class="fa-solid fa-chevron-left"></i></button>
+<button class='btn2' id='forward'><i class="fa-solid fa-chevron-right"></i></button>
+<% paths.forEach((path) => { %>
+  <% if (path.action) { %>
+    <a class='path nav-button' id="<%=path.id%>" onclick="<%=path.action%>"><%-path.name%></a>
+  <% } else if (path.path) { %>
+    <a class='path' href="<%=path.path%>"><%-path.name%></a>
+  <% } %>
+<% }) %>
+<div class='flexible'></div>
+<div class='nav-btns'>
+  <a class='btn2' id='explore'><div><i class="fa-solid fa-globe"></i></div><div>Discover</div></a>
+  <a class='btn2' href="https://portal.pinokio.computer/" target="_blank"><div><i class="fa-solid fa-question"></i></div><div>Help</div></a>
+  <button class='btn2' id='genlog'><div><i class="fa-solid fa-laptop-code"></i></div><div>Debug</div></button>
+  <a id='downloadlogs' download class='hidden btn2' href="/pinokio/logs.zip"><div><i class="fa-solid fa-download"></i></div><div>Download logs</div></a>
+  <a class='btn2' href="/?mode=settings"><div><i class="fa-solid fa-gear"></i></div><div>Settings</div></a>
+  <button id='new-window' title='open a new window' class='btn2'><div><i class="fa-solid fa-plus"></i></div><div>Window</div></button>
+</div>
+<!--
+<div class='nav-btns'>
+  <button class='btn2' id='report'><div><i class="fa-solid fa-bug"></i></div><div>Report Bug</div></button>
+  <a class='btn2' href='https://discord.gg/TQdNwadtE4' target="_blank"><div><i class="fa-brands fa-discord"></i></div><div>Discord</div></a>
+  <a class='btn2' href='https://twitter.com/cocktailpeanut' target="_blank"><div><i class="fa-brands fa-twitter"></i></div><div>Twitter</div></a>
+  <button id='new-window' title='open a new window' class='btn2'><i class="fa-solid fa-plus"></i></button>
+</div>
+-->
+</h1>
+</header>
+<main>
+<div class='container'>
+<div class='titleview'>
+  <h1>Settings</h1>
+  <br>
+  <br>
+  <div>
+    <div class='item'>
+      <label>Version</label>
+      <% if (version.pinokio) { %>
+        <div><%=version.pinokio%> (server: <%=version.pinokiod%>)</div>
+      <% } else { %>
+        <div>(server: <%=version.pinokiod%>)</div>
+      <% } %>
+    </div>
+  </div>
+  <form>
+    <% config.forEach((c) => { %>
+      <div class='item'>
+        <label><%=c.key%></label>
+        <% if (c.options) { %>
+          <select name="<%=c.key%>">
+            <% c.options.forEach((o) => { %>
+              <% if (o === c.val) { %>
+                <option value="<%=o%>" selected><%=o%></option> 
+              <% } else { %>
+                <option value="<%=o%>"><%=o%></option> 
+              <% } %>
+            <% }) %>
+          </select>
+        <% } else { %>
+          <% if (c.val) { %>
+            <input class='homepath' name="<%=c.key%>" type='text' value="<%=c.val%>" placeholder="<%=c.placeholder ? c.placeholder : ''%>">
+          <% } else { %>
+            <input class='homepath' name="<%=c.key%>" type='text' placeholder="<%=c.placeholder ? c.placeholder : ''%>">
+          <% } %>
+        <% } %>
+        <% if (c.description) { %>
+          <% if (Array.isArray(c.description)) { %>
+            <% c.description.forEach((d) => { %>
+              <div class='explanation'><%=d%></div>
+            <% }) %>
+          <% } else { %>
+            <div class='explanation'><%=c.description%></div>
+          <% } %>
+        <% } %>
+      </div>
+    <% }) %>
+    <br>
+    <button id='save' class='btn disabled'>Save</button>
+  </form>
+  <div class='loading hidden'>
+    <i class="fa-solid fa-circle-notch fa-spin"></i> Stand by. Do not close this window..
+  </div>
+  <% if (locals.bin) { %>
+    <hr/>
+    <div id='troubleshoot' class='troubleshoot'>
+      <h1>Troubleshoot</h1>
+      <br>
+      <br>
+      <div class='item'>
+        <label><i class="fa-solid fa-folder-open"></i> bin</label>
+        <div class='d'>Reset the bin folder and start fresh from scratch</div>
+        <div class='reset-bin-loading hidden'>
+          <i class="fa-solid fa-circle-notch fa-spin"></i> Stand by. Do not close this window..
+        </div>
+        <div>
+          <button class='btn' data-filepath="<%=bin%>"><i class="fa-solid fa-up-right-from-square"></i> View Folder</button>
+          <button class='red btn' id='del-bin'><i class="fa-solid fa-trash-can"></i> Reset</button>
+        </div>
+      </div>
+      <div class='item'>
+        <label><i class="fa-solid fa-folder-open"></i> server cache</label>
+        <div class='d'>Reset the pinokio server cache folder and start fresh from scratch</div>
+        <div class='reset-cache-loading hidden'>
+          <i class="fa-solid fa-circle-notch fa-spin"></i> Stand by. Do not close this window..
+        </div>
+        <div>
+          <button class='btn' data-filepath="<%=cache%>"><i class="fa-solid fa-up-right-from-square"></i> View Folder</button>
+          <button class='red btn' id='del-cache'><i class="fa-solid fa-trash-can"></i> Reset</button>
+        </div>
+      </div>
+      <% if (agent === "electron") { %>
+        <div class='item'>
+          <label><i class="fa-solid fa-folder-open"></i> browser cache</label>
+          <div class='d'>Reset the pinokio browser cache</div>
+          <div class='reset-browser-cache-loading hidden'>
+            <i class="fa-solid fa-circle-notch fa-spin"></i> Stand by. Do not close this window..
+          </div>
+          <div>
+            <button class='red btn' id='del-browser-cache'><i class="fa-solid fa-trash-can"></i> Reset Browser Cache</button>
+          </div>
+        </div>
+      <% } %>
+      <div class='item'>
+        <label><i class="fa-solid fa-folder-open"></i> drive</label>
+        <div class='d'>Shared virtual drives</div>
+        <div>
+          <button class='btn' data-filepath="<%=drive%>"><i class="fa-solid fa-up-right-from-square"></i> View Folder</button>
+        </div>
+      </div>
+    </div>
+    <hr/>
+    <div class='advanced'>
+      <h1>Advanced Settings</h1>
+      <br>
+      <br>
+      <div>Edit the system ENVIRONMENT file to customize pinokio system wide settings, such as where files are stored, terminal behavior, etc.</div>
+      <br>
+      <a class='btn' href="/env"><i class="fa-regular fa-pen-to-square"></i> Edit ENVIRONMENT</a>
+    </div>
+    <hr/>
+  <% } %>
+</div>
+</div>
+</main>
+<script>
+document.addEventListener("DOMContentLoaded", async () => {
+  //Reporter()
+  const n = new N()
+  <% if (locals.bin) { %>
+    document.querySelector("#del-bin").addEventListener("click", async (e) => {
+      console.log("del-bin")
+      let proceed = confirm("Are you sure you wish to delete the bin folder?")
+      if (proceed) {
+        document.querySelector(".reset-bin-loading").classList.remove("hidden")
+        document.querySelector("#del-bin").classList.add("hidden")
+        let res = await fetch("/pinokio/delete", {
+          method: "post",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({ type: "bin" })
+        }).then((res) => {
+          return res.json()
+        })
+        console.log(res)
+        document.querySelector(".reset-bin-loading").classList.add("hidden")
+        if (res.error) {
+          alert(res.error)
+        } else {
+          location.href = location.href
+        }
+      }
+    })
+    document.querySelector("#del-cache").addEventListener("click", async (e) => {
+      console.log("del-cache")
+      let proceed = confirm("Are you sure you wish to delete the cache folder?")
+      if (proceed) {
+        document.querySelector(".reset-cache-loading").classList.remove("hidden")
+        document.querySelector("#del-cache").classList.add("hidden")
+        let res = await fetch("/pinokio/delete", {
+          method: "post",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({ type: "cache" })
+        }).then((res) => {
+          return res.json()
+        })
+        console.log(res)
+        document.querySelector(".reset-cache-loading").classList.add("hidden")
+        if (res.error) {
+          alert(res.error)
+        } else {
+          location.href = location.href
+        }
+      }
+    })
+  <% } %>
+  <% if (agent === "electron") { %>
+    if (document.querySelector("#del-browser-cache")) {
+      document.querySelector("#del-browser-cache").addEventListener("click", async (e) => {
+        console.log("del-browser-cache")
+        let proceed = confirm("Are you sure you wish to delete the browser cache? This will remove all cookies and site data")
+        if (proceed) {
+          document.querySelector(".reset-browser-cache-loading").classList.remove("hidden")
+          document.querySelector("#del-browser-cache").classList.add("hidden")
+          let res = await fetch("/pinokio/delete", {
+            method: "post",
+            headers: {
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify({ type: "browser-cache" })
+          }).then((res) => {
+            return res.json()
+          })
+          console.log(res)
+          document.querySelector(".reset-browser-cache-loading").classList.add("hidden")
+          if (res.error) {
+            alert(res.error)
+          } else {
+            location.href = location.href
+          }
+        }
+      })
+    }
+  <% } %>
+//  document.querySelector("[name=home]").addEventListener("input", (e) => {
+//    let sep = "<%=platform === 'win32' ? '\\' : '/'%>" 
+//    document.querySelector("[name=drive]").value = e.target.value + sep + "drive"
+//  })
+  document.querySelector("#back").addEventListener("click", (e) => {
+    history.back()
+  })
+  document.querySelector("#forward").addEventListener("click", (e) => {
+    history.forward()
+  })
+  if (document.querySelector("#genlog")) {
+    document.querySelector("#genlog").addEventListener("click", (e) => {
+      e.preventDefault()
+      e.stopPropagation()
+      e.target.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i>'
+      fetch("/pinokio/log", {
+        method: "post",
+      }).then((res) => {
+        console.log("RES", res)
+        let btn = document.querySelector("#genlog")
+        let btn2 = document.querySelector("#downloadlogs")
+        btn2.classList.remove("hidden") 
+        btn.classList.add("hidden")
+        btn.innerHTML = '<i class="fa-solid fa-circle-check"></i> Generated!'
+        //btn.classList.add("hidden")
+      })
+    })
+  }
+  document.querySelector("#explore").addEventListener("click", async (e) => {
+    e.preventDefault()
+    e.stopPropagation()
+    location.href = "/?mode=explore"
+  })
+  document.querySelector("form").addEventListener("submit", async (e) => {
+    e.preventDefault()
+    e.stopPropagation()
+    let val = document.querySelector(`[name=home]`).value
+    if (/.*\s+.*/.test(val)) {
+      alert("Please use a home path that does NOT include a space")
+      document.querySelector("[name=home]").focus()
+      return
+    }
+
+//    let drive = document.querySelector(`[name=drive]`).value
+//    if (/.*\s+.*/.test(drive)) {
+//      alert("Please use a drive path that does NOT include a space")
+//      document.querySelector("[name=drive]").focus()
+//      return
+//    }
+
+
+    document.querySelector(".loading").classList.remove("hidden")
+    document.querySelector("#save").classList.add("hidden")
+    document.querySelector("[name=home]").setAttribute("disabled", "disabled")
+//    document.querySelector("[name=drive]").setAttribute("disabled", "disabled")
+    let theme = document.querySelector(`[name=theme]`).value
+    let r = await fetch("/config", {
+      method: "post",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        home: (val && val.length > 0 ? val : null),
+//        drive: (drive && drive.length > 0 ? drive : null),
+        theme 
+      })
+    }).then((res) => {
+      return res.json()
+    })
+    if (r.success) {
+      //alert("Successfully updated the pinokio home to " + val)
+      fetch("/restart", {
+        method: "post"
+      }, () => {
+      })
+      setInterval(async () => {
+        try {
+          let res = await fetch("/check").then((res) => {
+            return res.json()
+          })
+          if (res.success) {
+            document.querySelector(".loading").classList.add("hidden")
+            setTimeout(() => {
+              location.href = "/"
+            }, 1000)
+          }
+        } catch (e) {
+          console.log(e)
+        }
+      }, 1000)
+    } else if (r.error) {
+      alert(r.error)
+      location.href = location.href
+    }
+  })
+})
+</script>
+</body>
+</html>
