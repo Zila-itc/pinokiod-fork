@@ -3,9 +3,8 @@
 # Define the package name and version
 PACKAGE_NAME="pinokiod"
 PACKAGE_VERSION="latest"
-
   if [ -d "pinokiod" ]; then
-    find pinokiod -mindepth 1 -maxdepth 1 ! -name 'node_modules' -exec rm -rf {} +
+    find pinokiod -mindepth 1 -maxdepth 1 ! -name 'node_modules' ! -name 'package-lock.json' -exec rm -rf {} +
   fi
 
   # Get the new version of the package
