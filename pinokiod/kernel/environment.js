@@ -104,6 +104,19 @@ const ENVS = async () => {
       "##########################################################################",
     ],
   }, {
+    type: ["app"],
+    key: "PINOKIO_SCRIPT_AUTOLAUNCH",
+    val: "",
+    comment: [
+      "##########################################################################",
+      "#",
+      "# PINOKIO_SCRIPT_AUTOLAUNCH",
+      "# the relative file path for auto launching any script",
+      "# the specified script will automatically run when pinokio first launches",
+      "#",
+      "##########################################################################",
+    ]
+  }, {
     type: ["system"],
     key: "PINOKIO_SHARE_VAR",
     val: "url",

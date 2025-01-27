@@ -8,7 +8,8 @@ const { v4: uuidv4 } = require('uuid');
 const os = require('os');
 const fs = require('fs');
 //const pty = require('node-pty-prebuilt-multiarch-cp');
-const pty = require('@cocktailpeanut/node-pty-prebuilt-multiarch')
+//const pty = require('@cocktailpeanut/node-pty-prebuilt-multiarch')
+const pty = require('@homebridge/node-pty-prebuilt-multiarch')
 const path = require("path")
 const sudo = require("sudo-prompt-programfiles-x86");
 const unparse = require('yargs-unparser-custom-flag');
@@ -103,15 +104,19 @@ class Shell {
       delete this.env.CMAKE_GENERATOR
     }
     
-    if (this.env.CUDA_HOME) {
-      delete this.env.CUDA_HOME
-    }
-    if (this.env.CUDA_PATH) {
-      delete this.env.CUDA_PATH
+//    if (this.env.CUDA_HOME) {
+//      delete this.env.CUDA_HOME
+//    }
+    for(let key in this.env) {
+      if (key.startsWith("CUDA")) {
+        console.log("Unset env key: " + key)
+        delete this.env[key]
+      }
     }
 
     this.env.CMAKE_OBJECT_PATH_MAX = 1024
     this.env.PYTORCH_ENABLE_MPS_FALLBACK = 1
+//    this.env.PIP_REQUIRE_VIRTUALENV = "true"
 //    this.env.NPM_CONFIG_USERCONFIG = this.kernel.path("user_npmrc")
 //    this.env.NPM_CONFIG_GLOBALCONFIG = this.kernel.path("global_npmrc")
 //    this.env.npm_config_userconfig = this.kernel.path("user_npmrc")
@@ -234,9 +239,14 @@ class Shell {
         process.env = this.env
         sudo.exec(params.message, options, (err, stdout, stderr) => {
           if (err) {
-            reject(err)
+            console.log("SUDOPROMPT ERR", err)
+            // even when there's an error, just log the error, and don't throw the error. Instead, print the stdout so it displays what happened
+            resolve(stdout)
+//            reject(err)
           } else if (stderr) {
-            reject(stderr)
+            console.log("SUDOPROMPT STDERR", stderr)
+            resolve(stdout)
+//            reject(stderr)
           } else {
             resolve(stdout)
           }
@@ -406,9 +416,9 @@ class Shell {
         })
         cb()
       }, 1)
-      term.onExit((result) => {
-        console.log("onExit", { result })
-      })
+//      term.onExit((result) => {
+//        console.log("onExit", { result })
+//      })
       term.onData((data) => {
         if (ready) {
           queue.push(data)
@@ -486,6 +496,10 @@ class Shell {
     //      - if object => the conda.path is the path => create if doesn't exist yet
     // 2. then process venv
 
+    const isNumber = (value) => {
+      return !isNaN(Number(value)) && isFinite(Number(value));
+    }
+
 
     // 1. conda
     let conda_path
@@ -523,7 +537,17 @@ class Shell {
 
             // conda_python
             if (params.conda.python) {
-              conda_python = params.conda.python
+              if (isNumber(params.conda.python)) {
+                conda_python = "python=" + params.conda.python
+              } else {
+                conda_python = params.conda.python
+              }
+            } else if (params.conda_python) {
+              if (isNumber(params.conda_python)) {
+                conda_python = "python=" + params.conda_python
+              } else {
+                conda_python = params.conda_python
+              }
             }
           }
         }
@@ -534,6 +558,13 @@ class Shell {
 
 
     // 2. conda_activation
+
+    let timeout
+    if (this.platform === "win32") {
+      timeout = 'C:\\Windows\\System32\\timeout /t 1 > nul'
+    } else {
+      timeout = 'sleep 1'
+    }
 
     let conda_activation = []
     if (conda_activate) {
@@ -556,7 +587,9 @@ class Shell {
           `conda deactivate`,
           `conda deactivate`,
           `conda deactivate`,
+          timeout,
           `conda activate ${env_path}`,
+          timeout,
         ]
       } else {
         conda_activation = [
@@ -565,7 +598,9 @@ class Shell {
           `conda deactivate`,
           `conda deactivate`,
           `conda deactivate`,
+          timeout,
           `conda activate ${env_path}`,
+          timeout,
         ]
       }
     } else if (conda_name) {
@@ -575,7 +610,9 @@ class Shell {
           `conda deactivate`,
           `conda deactivate`,
           `conda deactivate`,
+          timeout,
           `conda activate ${conda_name}`,
+          timeout,
         ]
       } else {
         let envs_path = this.kernel.bin.path("miniconda/envs")
@@ -587,7 +624,9 @@ class Shell {
             `conda deactivate`,
             `conda deactivate`,
             `conda deactivate`,
+            timeout,
             `conda activate ${conda_name}`,
+            timeout,
           ]
         } else {
           conda_activation = [
@@ -596,7 +635,9 @@ class Shell {
             `conda deactivate`,
             `conda deactivate`,
             `conda deactivate`,
+            timeout,
             `conda activate ${conda_name}`,
+            timeout,
           ]
         }
       }
@@ -618,15 +659,55 @@ class Shell {
 //    }
 
 
-//    if (this.platform === "win32") {
+    if (this.platform === "win32") {
+      try {
+        let vcvars_path = this.kernel.bin.vs_path_env.VCVARSALL_PATH
+        console.log({ vcvars_path })
+        if (vcvars_path) {
+          const architecture = os.arch().toLowerCase();  // 'x64', 'ia32' (32-bit), etc.
+          const armArchitecture = process.arch.toLowerCase(); // For ARM-based architectures (on Windows), process.arch might be 'arm64', 'arm', etc.
+          console.log({ architecture, armArchitecture })
+
+          // Map architectures to vcvarsall.bat argument
+          let arg
+          if (architecture === 'x64' || armArchitecture === 'arm64') {
+            //arg = 'amd64';  // Native 64-bit architecture
+            arg = 'x64';
+          } else if (architecture === 'ia32' || armArchitecture === 'arm') {
+            arg = 'x86';    // Native 32-bit architecture
+          } else if (armArchitecture === 'x86_arm64') {
+            arg = 'x86_arm64';  // ARM64 on x86
+          } else if (armArchitecture === 'x86_arm') {
+            arg = 'x86_arm';    // ARM on x86
+          } else if (armArchitecture === 'amd64_arm64') {
+            arg = 'amd64_arm64'; // ARM64 on x64
+          } else if (armArchitecture === 'amd64_arm') {
+            arg = 'amd64_arm';   // ARM on x64
+          } else {
+            console.log(`Unsupported arch: os.arch()=${architecture}, process.arch=${armArchitecture}`)
+          }
+
+          if (arg) {
+            console.log({ arg, vcvars_path })
+            conda_activation.push(`"${vcvars_path}" ${arg} > nul 2>&1`)
+          }
+          console.log('vc vars setup successful')
+        } else {
+          console.log('vc vars env doesnt exist')
+        }
+      } catch (e) {
+        console.log('vc vars setup', e)
+      }
+
 //      const vs_path_env = this.kernel.bin.vs_path_env
 //      console.log({ vs_path_env })
 //      if (vs_path_env && vs_path_env.PATH) {
-//        const vs = `set PATH=${vs_path_env.PATH.join(path.delimiter)}${path.delimiter}%PATH%`
+//        this.env.VS_RELATED_PATHS = `${vs_path_env.PATH.join(path.delimiter)}${path.delimiter}`
+//        const vs = `set PATH=%VS_RELATED_PATHS%${path.delimiter}%PATH%`
 //        console.log({ vs })
 //        conda_activation.push(vs)
 //      }
-//    }
+    }
 
 
     // Update env setting
@@ -640,21 +721,107 @@ class Shell {
     }
 
 
+    if (conda_name === "base") {
+      this.env.PIP_REQUIRE_VIRTUALENV = "true"
+    }
+
     // 2. venv
+
+    /*
+    {
+      method: ...,
+      params: ...,
+      venv: <path_string>
+    }
+
+    or
+
+    {
+      method: ...,
+      params: ...,
+      venv: {
+        path: <path_string>,
+        python: <python version>
+    }
+
+    or
+
+    {
+      method: ...,
+      params: ...,
+      venv: <path_string>,
+      venv_python: <python version>
+    }
+
+    */
     let venv_activation
     if (params.venv) {
-      let env_path = path.resolve(params.path, params.venv)
-      let activate_path = (this.platform === 'win32' ? path.resolve(env_path, "Scripts", "activate") : path.resolve(env_path, "bin", "activate"))
-      let env_exists = await this.exists(env_path)
-      if (env_exists) {
-        venv_activation = [
-          (this.platform === "win32" ? `${activate_path} ${env_path}` : `source ${activate_path} ${env_path}`),
-        ]
+      let env_path
+      let python_version = ""
+      let use_uv = false
+      if (typeof params.venv === "string") {
+        env_path = path.resolve(params.path, params.venv)
+        if (params.venv_python) {
+          if (isNumber(params.venv_python)) {
+            python_version = ` --python ${params.venv_python}`
+            use_uv = true
+          }
+        }
+      } else if (typeof params.venv === "object" && params.venv.path) {
+        env_path = path.resolve(params.path, params.venv.path)
+        if (params.venv.python) {
+          if (isNumber(params.venv.python)) {
+            python_version = ` --python ${params.venv.python}`
+            use_uv = true
+          }
+        }
+      }
+      if (env_path) {
+        let activate_path = (this.platform === 'win32' ? path.resolve(env_path, "Scripts", "activate") : path.resolve(env_path, "bin", "activate"))
+        let deactivate_path = (this.platform === 'win32' ? path.resolve(env_path, "Scripts", "deactivate") : "deactivate")
+        let env_exists = await this.exists(env_path)
+        if (env_exists) {
+          if (use_uv) {
+            venv_activation = [
+//              `python -m venv --upgrade ${env_path}`,
+//              `uv venv --allow-existing ${env_path}${python_version}`,
+              (this.platform === "win32" ? `${activate_path} ${env_path}` : `source ${activate_path} ${env_path}`),
+              timeout,
+            ]
+          } else {
+            venv_activation = [
+//              `python -m venv --upgrade ${env_path}`,
+              (this.platform === "win32" ? `${activate_path} ${env_path}` : `source ${activate_path} ${env_path}`),
+              timeout,
+            ]
+          }
+        } else {
+          if (use_uv) {
+            // when python version is specified as venv.python => use uv
+            venv_activation = [
+              `uv venv ${env_path}${python_version}`,
+              (this.platform === "win32" ? `${activate_path} ${env_path}` : `source ${activate_path} ${env_path}`),
+              `uv pip install --upgrade pip setuptools wheel`,
+              deactivate_path,
+              timeout,
+              (this.platform === "win32" ? `${activate_path} ${env_path}` : `source ${activate_path} ${env_path}`),
+              timeout,
+            ]
+          } else {
+            // when python version is not specified, use the default python -m venv
+            venv_activation = [
+              `python -m venv ${env_path}`,
+              (this.platform === "win32" ? `${activate_path} ${env_path}` : `source ${activate_path} ${env_path}`),
+              `python -m pip install --upgrade pip setuptools wheel`,
+              deactivate_path,
+              timeout,
+              (this.platform === "win32" ? `${activate_path} ${env_path}` : `source ${activate_path} ${env_path}`),
+              timeout,
+            ]
+          }
+        }
       } else {
-        venv_activation = [
-          `python -m venv ${env_path}`,
-          (this.platform === "win32" ? `${activate_path} ${env_path}` : `source ${activate_path} ${env_path}`),
-        ]
+        venv_activation = []
       }
     } else {
       venv_activation = []
@@ -662,6 +829,13 @@ class Shell {
 
     // 3. construct params.message
     params.message = conda_activation.concat(venv_activation).concat(params.message)
+//    params.message = conda_activation.concat(venv_activation).concat(params.message).map((cmd) => {
+//      if (this.platform === 'win32') {
+//        return `call ${cmd}`
+//      } else {
+//        return cmd
+//      }
+//    })
     return params
   }
   async exec(params) {
@@ -689,14 +863,13 @@ class Shell {
           this.done = false
           this.ptyProcess = pty.spawn(this.shell, this.args, config)
           this.ptyProcess.onData((data) => {
-            console.log("****** onData", data)
             if (!this.done) {
               this.queue.push(data)
             }
           });
-          this.ptyProcess.onExit((result) => {
-            console.log(">>> exec onExit", result)
-          })
+//          this.ptyProcess.onExit((result) => {
+//            console.log(">>>>>>>>>>>>>>>>>>> exec onExit", result)
+//          })
         }
       } catch (e) {
         console.log("** Error", e)

@@ -2,6 +2,7 @@ const fs = require('fs')
 const path = require('path')
 const fetch = require('cross-fetch')
 const { glob } = require('glob')
+const semver = require('semver')
 class Conda {
   urls = {
     darwin: {
@@ -59,17 +60,24 @@ class Conda {
   async init() {
     // 
     if (this.kernel.homedir) {
-      let exists = await this.kernel.exists("condarc")
-      if (!exists) {
+//      let exists = await this.kernel.exists("condarc")
+        console.log("condarc init")
+//      if (!exists) {
         await fs.promises.writeFile(this.kernel.path('condarc'), `channels:
   - conda-forge
   - defaults
 create_default_packages:
-  - python=3.10`)
-      }
+  - python=3.10
+remote_connect_timeout_secs: 20.0
+remote_read_timeout_secs: 300.0
+remote_max_retries: 6
+repodata_threads: 4
+fetch_threads: 5
+report_errors: false`)
+//      }
       let pinned_exists = await this.kernel.exists("bin/miniconda/conda-meta")
       if (pinned_exists) {
-        await fs.promises.writeFile(this.kernel.path('bin/miniconda/conda-meta/pinned'), `conda=24.11.1`)
+        await fs.promises.writeFile(this.kernel.path('bin/miniconda/conda-meta/pinned'), `conda=24.11.3`)
 //        await fs.promises.writeFile(this.kernel.path('bin/miniconda/conda-meta/pinned'), `conda=24.9.0`)
 //        await fs.promises.writeFile(this.kernel.path('bin/miniconda/conda-meta/pinned'), `conda=24.11.2
 //conda-libmamba-solver=24.11.1`)
@@ -90,10 +98,87 @@ create_default_packages:
 //    - python=3.10`)
 //    }
 //  }
+  async check() {
+    let res = await this.kernel.bin.exec({ message: `conda list` }, (stream) => {
+//        console.log("conda list check", { stream })
+    })
+
+    let lines = res.response.split(/[\r\n]+/)
+    let conda_check = {}
+    let conda = new Set()
+    let start = false
+    for(let line of lines) {
+      if (start) {
+        let chunks = line.split(/\s+/).filter(x => x)
+        if (chunks.length > 2) {
+          let name = chunks[0]
+          let version = chunks[1]
+          conda.add(name)
+          if (name === "conda") {
+            //if (String(version) === "24.11.1") {
+            if (String(version) === "24.11.3") {
+              conda_check.conda = true
+            }
+          }
+          // check conda-libmamba-solver is up to date
+          // sometimes it just fails silently so need to check
+          if (name === "conda-libmamba-solver") {
+            //if (String(version) === "24.7.0") {
+            let channel = chunks[3]
+            let coerced = semver.coerce(version)
+            let mamba_requirement = ">=24.11.1"
+            if (semver.satisfies(coerced, mamba_requirement) && channel === "conda-forge") {
+              conda_check.mamba = true
+            }
+          }
+
+          // Use sqlite to check if `conda update -y --all` went through successfully
+          // sometimes it just fails silently so need to check
+          if (name === "sqlite") {
+            let coerced = semver.coerce(version)
+            let sqlite_requirement = ">=3.47.2"
+            if (semver.satisfies(coerced, sqlite_requirement)) {
+              console.log("semver satisfied")
+              conda_check.sqlite = true
+            } else {
+              console.log("semver NOT satisfied")
+            }
+          }
+        }
+      } else {
+        if (/.*name.*version.*build.*channel/i.test(line)) {
+          start = true 
+        }
+      }
+    }
+    console.log("> Check", { conda_check, conda })
+    this.kernel.bin.installed.conda = conda
+    return conda_check.conda && conda_check.mamba && conda_check.sqlite
+  }
   async install(req, ondata) {
+    for(let i=0; i<5; i++) {
+      await this._install(req, ondata)
+      let installed = await this.check()
+      if (installed) {
+        console.log("Conda properly installed and updated")
+        return
+      } else {
+        console.log("Conda NOT roperly installed and updated. Trying again...")
+      }
+    }
+  }
+  async _install(req, ondata) {
     const installer_url = this.urls[this.kernel.platform][this.kernel.arch]
     const installer = this.installer[this.kernel.platform]
     const install_path = this.kernel.bin.path("miniconda")
+    let install_path_exists = await this.kernel.exists("bin/miniconda")
+    if (install_path_exists) {
+      console.log("Install path already exists. Removing...", install_path)
+      await fs.promises.rm(install_path, { recursive: true }).catch((e) => {
+      })
+    } else {
+      console.log("Install path does not exist. Installing...")
+    }
 
     ondata({ raw: `downloading installer: ${installer_url}...\r\n` })
     await this.kernel.bin.download(installer_url, installer, ondata)
@@ -116,7 +201,8 @@ create_default_packages:
     // set pinned
     let pinned_exists = await this.kernel.exists("bin/miniconda/conda-meta")
     if (pinned_exists) {
-      await fs.promises.writeFile(this.kernel.path('bin/miniconda/conda-meta/pinned'), `conda=24.11.1`)
+      //await fs.promises.writeFile(this.kernel.path('bin/miniconda/conda-meta/pinned'), `conda=24.11.1`)
+      await fs.promises.writeFile(this.kernel.path('bin/miniconda/conda-meta/pinned'), `conda=24.11.3`)
 //      await fs.promises.writeFile(this.kernel.path('bin/miniconda/conda-meta/pinned'), `conda=24.9.0`)
 //      await fs.promises.writeFile(this.kernel.path('bin/miniconda/conda-meta/pinned'), `conda=24.11.2
 //conda-libmamba-solver=24.11.1`)
@@ -139,12 +225,18 @@ create_default_packages:
     let cmds = [
       //"conda clean -y --index-cache",
       "conda clean -y --all",
-      `conda config --file ${this.kernel.path('condarc')} --set remote_connect_timeout_secs 20`,
-      `conda config --file ${this.kernel.path('condarc')} --set remote_read_timeout_secs 300`,
-      `conda config --file ${this.kernel.path('condarc')} --set remote_max_retries 6`,
-      `conda config --file ${this.kernel.path('condarc')} --set repodata_threads 4`,
-      `conda config --file ${this.kernel.path('condarc')} --set fetch_threads 5`,
-      "conda install -y -c conda-forge conda-libmamba-solver=24.11.1",
+
+//      `conda config --file ${this.kernel.path('condarc')} --set remote_connect_timeout_secs 20`,
+//      `conda config --file ${this.kernel.path('condarc')} --set remote_read_timeout_secs 300`,
+//      `conda config --file ${this.kernel.path('condarc')} --set remote_max_retries 6`,
+//      `conda config --file ${this.kernel.path('condarc')} --set repodata_threads 4`,
+//      `conda config --file ${this.kernel.path('condarc')} --set fetch_threads 5`,
+//      `conda config --file ${this.kernel.path('condarc')} --set report_errors false`,
+
+
+
+//      `conda config --file ${this.kernel.path('condarc')} --set auto_update_conda false`,
+//      "conda install -y -c conda-forge conda-libmamba-solver=24.11.1",
 //      "conda install libsqlite --force-reinstall -y",
 //      `conda config --file ${this.kernel.path('condarc')} --set auto_update_conda False`,
       //"conda install -y conda=24.9.0 -vvv --strict-channel-priority",
@@ -152,7 +244,11 @@ create_default_packages:
       //"conda install -y conda-libmamba-solver=24.7.0 conda=24.7.1 -vvv --strict-channel-priority",
       //"conda install -y conda-libmamba-solver=24.11.1 conda=24.7.1",
       //"conda install -y conda-libmamba-solver=24.11.1 conda=24.11.2",
-      "conda update -y --all",
+      //"conda update -y conda-libmamba-solver",
+      "conda update -y conda",// -vvv --debug",
+      "conda update -y --all",// -vvv --debug",
+//      "python -m pip install --upgrade pip setuptools wheel",
+//      "python -m ensurepip --upgrade",
 //      "conda update -y conda",
 //      "conda update -y --all",
     ]
@@ -162,6 +258,9 @@ create_default_packages:
 
     await this.kernel.bin.exec({
       message: cmds,
+      env: {
+        PIP_REQUIRE_VIRTUALENV: "false"
+      }
 //      conda: {
 //        name: "base",
 //        activate: "minimal"
@@ -209,6 +308,8 @@ create_default_packages:
         this.kernel.bin.path("miniconda", "python.exe"),
         this.kernel.bin.path("miniconda", "python3.exe"),
       )
+
+
     }
     ondata({ raw: `Install finished\r\n` })
     await this.kernel.bin.rm(installer, ondata)
